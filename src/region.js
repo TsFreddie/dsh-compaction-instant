@@ -20,6 +20,7 @@ import { createUserMessage, errorChain } from "@deepseek-ai/dsh-llm";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { frameCheckpoint, joinCompiledEntries } from "./compiler.js";
+import { sessionEventAt, sessionEvents } from "./session-compat.js";
 
 /**
  * Rejects a compiled checkpoint whose replacement boundaries are no longer
@@ -39,7 +40,7 @@ export class SurfaceChangedError extends Error {}
 function surfaceTurns(session, surfaceNodes) {
   const turnOfSeq = new Map();
   let turn = 0;
-  for (const event of session.events ?? []) {
+  for (const event of sessionEvents(session)) {
     if (event.type === "turn/start") turn = event.data.turn;
     turnOfSeq.set(event.seq, turn);
   }
@@ -152,7 +153,7 @@ export function selectCompactableRange(session, measurement, retainTurns, retain
 export async function compactSurfaceRegion(dependencies, session, start, end, agent, options, signal) {
   if (options.owner === null) signal?.throwIfAborted();
   const selection = validateSurfaceRegion(session, start, end);
-  const entryState = inspectCompactionEntryState(session.events);
+  const entryState = inspectCompactionEntryState(sessionEvents(session));
   assertCompactionInactive(entryState.unmatchedCompactionStart, entryState.latestEndSeedSeq, "compaction");
   let owner;
   if (options.owner === null) {
@@ -249,7 +250,7 @@ function assertCompactionInactive(unmatchedCompactionStart, latestEndSeedSeq, st
  * @param stage - operation label included in the busy diagnostic.
  */
 export function assertNoActiveCompaction(session, stage) {
-  const entryState = inspectCompactionEntryState(session.events);
+  const entryState = inspectCompactionEntryState(sessionEvents(session));
   assertCompactionInactive(entryState.unmatchedCompactionStart, entryState.latestEndSeedSeq, stage);
 }
 
@@ -391,8 +392,8 @@ function commitCompactionBody(session, startEvent, compiled) {
   session.append("user/message", checkpointMessage, {
     surfaceOp: {
       op: "replace",
-      start,
-      end
+      startSeq: start,
+      endSeq: end
     },
     sourceEventSeqs: [
       startEvent.seq,

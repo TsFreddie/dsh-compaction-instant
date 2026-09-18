@@ -9,6 +9,7 @@ import test from "node:test";
 import { Context } from "@deepseek-ai/cordis";
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from "@deepseek-ai/dsh-llm";
 import { Session } from "@deepseek-ai/dsh-session";
+import { sessionEventAt, sessionEvents } from "../src/session-compat.js";
 import { apply as applyCommand, defineRecallCommand, resolveConfig as resolveCommandConfig } from "../src/command.js";
 import { DEFAULT_MAX_RECALL_TOKENS, findCheckpointSeqs, parseSeqSpec, projectMessageText, recallSession, resolveRecallReference } from "../src/recall.js";
 import { compileSearchPattern, InvalidSearchPatternError, searchSession } from "../src/search.js";
@@ -42,9 +43,9 @@ function makeIdleSession() {
   const seed = [
     { type: "turn/start", seq: 0, time: 1, data: { turn: 1 } },
     { type: "user/message", seq: 1, time: 2, data: user, surfaceOp: "append" },
-    { type: "assistant/message", seq: 2, time: 3, data: { message: assistant }, surfaceOp: "append" },
+    { type: "assistant/message", seq: 2, time: 3, data: { turn: 1, step: 0, stream: [], message: assistant }, surfaceOp: "append" },
     { type: "tool/result", seq: 3, time: 4, data: { message: result }, surfaceOp: "append" },
-    { type: "assistant/message", seq: 4, time: 5, data: { message: assistant2 }, surfaceOp: "append" },
+    { type: "assistant/message", seq: 4, time: 5, data: { turn: 1, step: 0, stream: [], message: assistant2 }, surfaceOp: "append" },
     { type: "turn/end", seq: 5, time: 6, data: { turn: 1 } }
   ];
   return Session.create("session-recall", seed);
@@ -319,7 +320,7 @@ test("recall command appends a form:recall user message with search hits", async
   });
   assert.equal(result.kind, "success");
   assert.match(result.text, /Found 2 matching event\(s\)/);
-  const appended = session.events[result.sourceEventSeq];
+  const appended = sessionEventAt(session, result.sourceEventSeq);
   assert.equal(appended.type, "user/message");
   assert.equal(appended.data.source.kind, "plugin");
   assert.equal(appended.data.source.plugin, "recall");
@@ -334,7 +335,7 @@ test("recall command appends a form:recall user message with search hits", async
 test("recall command rejects invalid input and no-hit searches without appending", async () => {
   const session = makeIdleSession();
   const command = defineRecallCommand(resolveCommandConfig({}));
-  const before = session.events.length;
+  const before = sessionEvents(session).length;
   const empty = await command.handler({
     agent: idleAgent(session),
     rawInput: "",
@@ -359,7 +360,7 @@ test("recall command rejects invalid input and no-hit searches without appending
   });
   assert.equal(none.kind, "error");
   assert.match(none.text, /No matching events/);
-  assert.equal(session.events.length, before);
+  assert.equal(sessionEvents(session).length, before);
 });
 
 test("recall command maps maintenance conflicts to an error result", async () => {

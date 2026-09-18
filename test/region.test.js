@@ -8,6 +8,7 @@ import test from "node:test";
 import { ManualCompactionError } from "@deepseek-ai/dsh-compaction";
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from "@deepseek-ai/dsh-llm";
 import { Session } from "@deepseek-ai/dsh-session";
+import { sessionEventAt, sessionEvents } from "../src/session-compat.js";
 import { compactSurfaceRegion, fenceCode, selectCompactableRange, SurfaceChangedError } from "../src/region.js";
 
 /** Build one detached session with a complete (idle) turn bracket. */
@@ -39,9 +40,9 @@ function makeIdleSession() {
   const seed = [
     { type: "turn/start", seq: 0, time: 1, data: { turn: 1 } },
     { type: "user/message", seq: 1, time: 2, data: user, surfaceOp: "append" },
-    { type: "assistant/message", seq: 2, time: 3, data: { message: assistant }, surfaceOp: "append" },
+    { type: "assistant/message", seq: 2, time: 3, data: { turn: 1, step: 0, stream: [], message: assistant }, surfaceOp: "append" },
     { type: "tool/result", seq: 3, time: 4, data: { message: result }, surfaceOp: "append" },
-    { type: "assistant/message", seq: 4, time: 5, data: { message: assistant2 }, surfaceOp: "append" },
+    { type: "assistant/message", seq: 4, time: 5, data: { turn: 1, step: 0, stream: [], message: assistant2 }, surfaceOp: "append" },
     { type: "user/message", seq: 5, time: 6, data: user2, surfaceOp: "append" },
     { type: "turn/end", seq: 6, time: 7, data: { turn: 1 } }
   ];
@@ -102,12 +103,12 @@ function makeMultiTurnSession() {
   // Turn 1: seqs 1-2
   push("turn/start", { turn: 1 });
   push("user/message", user("please fix the bug"), "append");
-  push("assistant/message", { message: assistant("on it") }, "append");
+  push("assistant/message", { turn: 1, step: 0, stream: [], message: assistant("on it") }, "append");
   push("turn/end", { turn: 1 });
   // Turn 2: seqs 5-8
   push("turn/start", { turn: 2 });
   push("user/message", user("show me the file"), "append");
-  push("assistant/message", { message: assistant("reading", [
+  push("assistant/message", { turn: 2, step: 0, stream: [], message: assistant("reading", [
     { type: "text", text: "reading" },
     { type: "tool-call", id: "call-1", name: "read", arguments: '{"file_path":"a.js"}' }
   ]) }, "append");
@@ -116,12 +117,12 @@ function makeMultiTurnSession() {
     content: [{ type: "text", text: "file content" }],
     isError: false
   }) }, "append");
-  push("assistant/message", { message: assistant("done") }, "append");
+  push("assistant/message", { turn: 2, step: 0, stream: [], message: assistant("done") }, "append");
   push("turn/end", { turn: 2 });
   // Turn 3: seqs 10-11
   push("turn/start", { turn: 3 });
   push("user/message", user("thank you"), "append");
-  push("assistant/message", { message: assistant("welcome") }, "append");
+  push("assistant/message", { turn: 3, step: 0, stream: [], message: assistant("welcome") }, "append");
   push("turn/end", { turn: 3 });
   return Session.create("session-multi", seed);
 }
@@ -182,7 +183,7 @@ test("compactSurfaceRegion runs a complete manual transaction with a flush", asy
   assert.match(summaryText, /## Compiled checkpoint: 4 nodes \(seqs 1-4, ~400 tokens\)/);
   assert.match(summaryText, /\[user\]\ncompiled body/);
   assert.match(summaryText, /尾部原文保留: 1 节点 \/ ~100 tokens/);
-  const events = session.events;
+  const events = sessionEvents(session);
   const startEvent = events[result.startSeq];
   const summaryEvent = events[result.summarySeq];
   const endEvent = events[result.endSeq];
@@ -210,7 +211,7 @@ test("compactSurfaceRegion rejects a checkpoint that does not shrink the surface
     (error) => error instanceof ManualCompactionError && error.code === "summary"
   );
   // The failed manual attempt still closed its bracket with an error marker.
-  const events = session.events;
+  const events = sessionEvents(session);
   const last = events[events.length - 1];
   assert.equal(last.type, "compaction/end");
   assert.ok(last.data.error.length > 0);
@@ -261,7 +262,7 @@ test("compactSurfaceRegion runs an automatic in-turn transaction", async () => {
     stability: "whole-surface"
   }, undefined);
   assert.deepEqual(result.shadowedSeqs, [1, 2, 3, 4]);
-  assert.equal(session.events[result.startSeq].data.turn, 2);
+  assert.equal(sessionEventAt(session, result.startSeq).data.turn, 2);
 });
 
 test("SurfaceChangedError is exported for callers to distinguish", () => {
