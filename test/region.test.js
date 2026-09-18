@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ManualCompactionError } from "@deepseek-ai/dsh-compaction";
-import { createAssistantMessage, createToolResultMessage, createUserMessage } from "@deepseek-ai/dsh-llm";
+import { createAssistantMessage, createSystemMessage, createToolResultMessage, createUserMessage } from "@deepseek-ai/dsh-llm";
 import { Session } from "@deepseek-ai/dsh-session";
 import { sessionEventAt, sessionEvents } from "../src/session-compat.js";
 import { compactSurfaceRegion, fenceCode, selectCompactableRange, SurfaceChangedError } from "../src/region.js";
@@ -277,4 +277,37 @@ test("fenceCode wraps text and adapts to embedded fences", () => {
   assert.equal(fenceCode("````"), "`````\n````\n`````");
   assert.equal(fenceCode(""), "```\n\n```");
   assert.equal(fenceCode("no backticks"), "```\nno backticks\n```");
+});
+
+test("a system/message head stays outside the compacted range", async () => {
+  // Current harness sessions open the surface with a system/message, and that
+  // node may only be rewritten by a system/message over exactly that node, so
+  // the selected range opens on the first node after it.
+  const seed = [
+    { type: "turn/start", seq: 0, time: 1, data: { turn: 1 } },
+    { type: "system/message", seq: 1, time: 2, data: { turn: 1, step: 1, message: createSystemMessage("you are a coding agent", "test") }, surfaceOp: "append" },
+    { type: "user/message", seq: 2, time: 3, data: createUserMessage({ content: [{ type: "text", text: "first ask" }], source: { kind: "user" } }), surfaceOp: "append" },
+    { type: "assistant/message", seq: 3, time: 4, data: { turn: 1, step: 1, stream: [], message: createAssistantMessage({ content: [{ type: "text", text: "first answer" }], source: { provider: "p", model: "m" } }) }, surfaceOp: "append" },
+    { type: "turn/end", seq: 4, time: 5, data: { turn: 1 } },
+    { type: "turn/start", seq: 5, time: 6, data: { turn: 2 } },
+    { type: "user/message", seq: 6, time: 7, data: createUserMessage({ content: [{ type: "text", text: "second ask" }], source: { kind: "user" } }), surfaceOp: "append" },
+    { type: "assistant/message", seq: 7, time: 8, data: { turn: 2, step: 0, stream: [], message: createAssistantMessage({ content: [{ type: "text", text: "second answer" }], source: { provider: "p", model: "m" } }) }, surfaceOp: "append" },
+    { type: "turn/end", seq: 8, time: 9, data: { turn: 2 } }
+  ];
+  const session = Session.create("session-system-head", seed);
+  assert.equal(session.surface.nodes[0], 1);
+  assert.equal(sessionEventAt(session, 1).type, "system/message");
+
+  const range = selectCompactableRange(session, makeFakeMeter().measure(session), 1, 0);
+  assert.equal(range.start, 2, "the prompt head must stay outside the range");
+  assert.equal(range.end, 3);
+
+  // The transaction commits cleanly over that range and leaves node 0 alone.
+  const result = await compactSurfaceRegion({ meter: makeFakeMeter(), compile: fakeCompile }, session, range.start, range.end, undefined, {
+    owner: null,
+    stability: "selected-span"
+  }, undefined);
+  assert.deepEqual(result.shadowedSeqs, [2, 3]);
+  assert.equal(session.surface.nodes[0], 1);
+  assert.equal(sessionEventAt(session, 1).type, "system/message");
 });

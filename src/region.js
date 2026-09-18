@@ -126,9 +126,13 @@ export function selectCompactableRange(session, measurement, retainTurns, retain
     if (toolPairingBalancedBefore(session, surfaceNodes[keepFromIdx])) break;
     keepFromIdx -= 1;
   }
-  if (keepFromIdx === 0) return null;
+  // A `system/message` at surface node 0 may only be rewritten by a
+  // system/message over exactly that node, so the range never starts there:
+  // the prompt head stays outside every compacted span.
+  const firstIdx = sessionEventAt(session, surfaceNodes[0])?.type === "system/message" ? 1 : 0;
+  if (keepFromIdx <= firstIdx) return null;
   return {
-    start: surfaceNodes[0],
+    start: surfaceNodes[firstIdx],
     end: surfaceNodes[keepFromIdx - 1]
   };
 }
