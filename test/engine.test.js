@@ -8,6 +8,7 @@ import test from "node:test";
 import { Context } from "@deepseek-ai/cordis";
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from "@deepseek-ai/dsh-llm";
 import { Session } from "@deepseek-ai/dsh-session";
+import { sessionEventAt, sessionEvents } from "../src/session-compat.js";
 import { InstantCompactionEngine } from "../src/index.js";
 import { compactSurfaceRegion } from "../src/region.js";
 
@@ -40,9 +41,9 @@ function makeIdleSession() {
   const seed = [
     { type: "turn/start", seq: 0, time: 1, data: { turn: 1 } },
     { type: "user/message", seq: 1, time: 2, data: user, surfaceOp: "append" },
-    { type: "assistant/message", seq: 2, time: 3, data: { message: assistant }, surfaceOp: "append" },
+    { type: "assistant/message", seq: 2, time: 3, data: { turn: 1, step: 0, stream: [], message: assistant }, surfaceOp: "append" },
     { type: "tool/result", seq: 3, time: 4, data: { message: result }, surfaceOp: "append" },
-    { type: "assistant/message", seq: 4, time: 5, data: { message: assistant2 }, surfaceOp: "append" },
+    { type: "assistant/message", seq: 4, time: 5, data: { turn: 1, step: 0, stream: [], message: assistant2 }, surfaceOp: "append" },
     { type: "user/message", seq: 5, time: 6, data: user2, surfaceOp: "append" },
     { type: "turn/end", seq: 6, time: 7, data: { turn: 1 } }
   ];
@@ -129,7 +130,7 @@ test("compile() caps the checkpoint at checkpointCap", async () => {
   const seeded = Session.create("session-2", [
     { type: "turn/start", seq: 0, time: 1, data: { turn: 1 } },
     { type: "user/message", seq: 1, time: 2, data: createUserMessage({ content: [{ type: "text", text: long }], source: { kind: "user" } }), surfaceOp: "append" },
-    { type: "assistant/message", seq: 2, time: 3, data: { message: createAssistantMessage({ content: [{ type: "text", text: "ok" }], source: { provider: "p", model: "m" } }) }, surfaceOp: "append" },
+    { type: "assistant/message", seq: 2, time: 3, data: { turn: 1, step: 0, stream: [], message: createAssistantMessage({ content: [{ type: "text", text: "ok" }], source: { provider: "p", model: "m" } }) }, surfaceOp: "append" },
     { type: "turn/end", seq: 3, time: 4, data: { turn: 1 } }
   ]);
   const prepared = {
@@ -182,10 +183,10 @@ test("engine regionDependencies drive a real manual transaction end-to-end", asy
     stability: "selected-span"
   }, undefined);
   assert.deepEqual(result.shadowedSeqs, [1, 2, 3, 4]);
-  const summaryEvent = session.events[result.summarySeq];
+  const summaryEvent = sessionEventAt(session, result.summarySeq);
   assert.equal(summaryEvent.data.provider, "dsh-compaction-instant");
   assert.equal(summaryEvent.data.model, "vcc-compiler");
-  const checkpoint = session.events[result.summarySeq + 1];
+  const checkpoint = sessionEventAt(session, result.summarySeq + 1);
   assert.equal(checkpoint.data.source.plugin, "compact");
   const text = checkpoint.data.content.map((block) => block.text).join("\n");
   assert.match(text, /<compacted-checkpoint>/);

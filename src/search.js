@@ -14,6 +14,7 @@
  */
 import { estimateEntryTokens, sanitize, truncateTokens } from "./compiler.js";
 import { projectMessageText } from "./recall.js";
+import { sessionEventAt, sessionEvents } from "./session-compat.js";
 
 /** Default cap on the number of matching events shown in one result. */
 export const DEFAULT_MAX_SEARCH_HITS = 50;
@@ -55,7 +56,7 @@ export function searchSession(session, patternSource, config) {
   const pattern = compileSearchPattern(patternSource);
   const maxHits = config.maxSearchHits;
   const maxTokens = config.maxRecallTokens;
-  const events = session.events;
+  const events = sessionEvents(session);
   const hits = [];
   let totalMatches = 0;
   let budget = maxTokens;

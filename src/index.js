@@ -19,6 +19,7 @@ import { CONTEXT_WINDOW_EXCEEDED_CODE } from "@deepseek-ai/dsh-llm";
 import { assertNever, deepFreeze } from "@deepseek-ai/dsh-util-values";
 import { compileNoisePatterns, compileRegion, COMPILER_REV, DEFAULT_ARG_TOOLS, DEFAULT_NOISE_PATTERNS, isCheckpointSource } from "./compiler.js";
 import { assertNoActiveCompaction, compactSurfaceRegion, selectCompactableRange } from "./region.js";
+import { sessionEventAt, sessionEvents } from "./session-compat.js";
 
 // ── configuration resolution ───────────────────────────────────────────────
 
@@ -611,7 +612,7 @@ export class InstantCompactionEngine extends CompactionEngine {
    */  async compile(prepared, agent, signal) {
     signal?.throwIfAborted();
     const nodes = prepared.shadowedSeqs.map((seq) => {
-      const event = prepared.session.events[seq];
+      const event = sessionEventAt(prepared.session, seq);
       if (event === undefined || event.seq !== seq) throw new Error(`compaction: surface seq ${seq} has no matching session event (corrupt surface)`);
       return {
         seq,
@@ -623,7 +624,7 @@ export class InstantCompactionEngine extends CompactionEngine {
     // elided under cap pressure, so the agent can recall the dropped layer.
     const checkpointOrdinals = new Map();
     let checkpointCount = 0;
-    for (const event of prepared.session.events) {
+    for (const event of sessionEvents(prepared.session)) {
       if (event.type === "user/message" && isCheckpointSource(event.data?.source)) {
         checkpointCount += 1;
         checkpointOrdinals.set(event.seq, checkpointCount);

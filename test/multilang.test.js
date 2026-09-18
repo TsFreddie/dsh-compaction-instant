@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from "@deepseek-ai/dsh-llm";
 import { Session } from "@deepseek-ai/dsh-session";
+import { sessionEventAt, sessionEvents } from "../src/session-compat.js";
 import {
   compileNoisePatterns,
   compileNodes,
@@ -187,7 +188,7 @@ test("recallSession restores multilingual originals byte-exact", () => {
   const seed = [
     { type: "turn/start", seq: 0, time: 1, data: { turn: 1 } },
     { type: "user/message", seq: 1, time: 2, data: user, surfaceOp: "append" },
-    { type: "assistant/message", seq: 2, time: 3, data: { message: assistant }, surfaceOp: "append" },
+    { type: "assistant/message", seq: 2, time: 3, data: { turn: 1, step: 0, stream: [], message: assistant }, surfaceOp: "append" },
     { type: "tool/result", seq: 3, time: 4, data: { message: result }, surfaceOp: "append" },
     { type: "turn/end", seq: 4, time: 5, data: { turn: 1 } }
   ];
